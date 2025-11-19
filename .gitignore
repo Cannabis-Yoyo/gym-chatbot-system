@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+app_debug.log
+.last_scan
+data/csv_cache/
