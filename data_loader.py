@@ -12,8 +12,8 @@ class DataLoader:
         self.last_scan_file = Config.LAST_SCAN_FILE
         self.dataframes = {}
         self.date_columns = {}
-        self.file_mappings = {}  # Track which files map to which type
-        self.file_groups = {}  # Group files by detected type
+        self.file_mappings = {}
+        self.file_groups = {}
         
         self.check_for_new_files()
     
@@ -21,28 +21,38 @@ class DataLoader:
         """Detect what type of data file this is based on columns"""
         columns_lower = [col.lower() for col in df.columns]
         columns_str = ' '.join(columns_lower)
+        filename_lower = filename.lower()
         
-        # Member data detection
+        # Check filename first for common patterns
+        if 'contact' in filename_lower or ('data' in filename_lower and 'member' not in filename_lower):
+            return 'data'
+        
+        if 'order' in filename_lower and 'item' not in filename_lower:
+            return 'orders'
+        
+        if 'payment' in filename_lower:
+            return 'payments'
+        
+        if 'item' in filename_lower:
+            return 'items_purchased'
+        
+        # Then check columns
         if any(keyword in columns_str for keyword in ['member', 'contact', 'phone', 'subscription']):
             if any(keyword in columns_str for keyword in ['name', 'email']):
                 return 'data'
         
-        # Orders data detection
         if 'order' in columns_str and 'number' in columns_str:
             if any(keyword in columns_str for keyword in ['payment', 'amount', 'status']):
                 return 'orders'
         
-        # Payments data detection
         if 'payment' in columns_str:
             if any(keyword in columns_str for keyword in ['amount', 'method', 'transaction', 'stripe']):
                 return 'payments'
         
-        # Items purchased detection
         if 'item' in columns_str and 'order' in columns_str:
             if any(keyword in columns_str for keyword in ['quantity', 'qty', 'purchased']):
                 return 'items_purchased'
         
-        # If can't detect, use filename
         base_name = os.path.splitext(filename)[0].lower().replace(' ', '_')
         logger.warning(f"Could not auto-detect file type for {filename}, using filename: {base_name}")
         return base_name
@@ -163,12 +173,9 @@ class DataLoader:
             return df_list[0]
         
         try:
-            # Concatenate all dataframes
             merged_df = pd.concat(df_list, ignore_index=True)
             
-            # Remove duplicates based on key columns
             if file_type == 'data':
-                # For member data, remove duplicates by email or member ID
                 email_col = next((col for col in merged_df.columns if 'email' in col.lower()), None)
                 member_id_col = next((col for col in merged_df.columns if 'member' in col.lower() and 'id' in col.lower()), None)
                 
@@ -178,20 +185,14 @@ class DataLoader:
                     merged_df = merged_df.drop_duplicates(subset=[member_id_col], keep='last')
             
             elif file_type == 'orders':
-                # For orders, remove duplicates by order number
                 order_col = next((col for col in merged_df.columns if 'order' in col.lower() and 'number' in col.lower()), None)
                 if order_col:
                     merged_df = merged_df.drop_duplicates(subset=[order_col], keep='last')
             
             elif file_type == 'payments':
-                # For payments, remove duplicates by transaction ID or unique combination
                 transaction_col = next((col for col in merged_df.columns if 'transaction' in col.lower() or 'payment_id' in col.lower()), None)
                 if transaction_col:
                     merged_df = merged_df.drop_duplicates(subset=[transaction_col], keep='last')
-            
-            elif file_type == 'items_purchased':
-                # For items, keep all records (no deduplication needed usually)
-                pass
             
             logger.info(f"Merged {len(df_list)} files for type '{file_type}', resulting in {len(merged_df)} total rows")
             return merged_df
@@ -211,7 +212,6 @@ class DataLoader:
         
         logger.info(f"Found {len(data_files)} data file(s)")
         
-        # Dictionary to group dataframes by type
         grouped_dfs = {}
         
         for filename in data_files:
@@ -228,10 +228,8 @@ class DataLoader:
                     df = self.load_csv_file(csv_path, filename)
                 
                 if df is not None:
-                    # Detect file type based on columns
                     file_type = self.detect_file_type(df, filename)
                     
-                    # Add to grouped dataframes
                     if file_type not in grouped_dfs:
                         grouped_dfs[file_type] = []
                         self.file_groups[file_type] = []
@@ -245,7 +243,6 @@ class DataLoader:
                 logger.error(f"Error processing {filename}: {e}")
                 continue
         
-        # Merge files of the same type
         for file_type, df_list in grouped_dfs.items():
             if len(df_list) > 1:
                 logger.info(f"Merging {len(df_list)} files of type '{file_type}'")

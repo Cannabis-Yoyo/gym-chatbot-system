@@ -1,14 +1,16 @@
 import os
 import sys
 from pathlib import Path
-import streamlit as st
 
 class Config:
     # Get API key from secrets or use embedded
+    OPENROUTER_API_KEY = None
+    
     try:
+        import streamlit as st
         OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
     except:
-        OPENROUTER_API_KEY = "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"
+        print("no api key in secrets")
     
     # Model Configuration
     MODEL_NAME = 'meta-llama/llama-3.3-70b-instruct:free'
